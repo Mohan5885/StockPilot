@@ -8,6 +8,7 @@ from .views import (
     approve_password_reset_request_view,
     deny_password_reset_request_view,
     password_reset_confirm_view,
+    change_password_view,
     staff_detail_view,
     staff_list_create_view,
 )
@@ -15,6 +16,11 @@ from .views import (
 
 urlpatterns = [
     path("login/", login_view, name="login"),
+    path(
+        "change-password/",
+        change_password_view,
+        name="change-password",
+    ),
     path(
         "password-reset-requests/",
         password_reset_request_view,

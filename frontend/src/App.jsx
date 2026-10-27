@@ -2,28 +2,34 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react"
 import {
   BadgeCheck,
   Bot,
-  Building2,
-  BriefcaseBusiness,
   CircleUserRound,
   Clock3,
+  Download,
   LogOut,
-  Mail,
   MessageCircle,
-  RotateCcw,
-  Phone,
   Send,
   ShieldAlert,
-  Trash2,
   X,
+  KeyRound,
 } from "lucide-react";
+import ChangePasswordDialog from "./ChangePasswordDialog.jsx";
 import "./App.css";
 
-const API = "http://127.0.0.1:8000";
+const API = (
+  import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000"
+).replace(/\/+$/, "");
 const DashboardCharts = lazy(() => import("./DashboardCharts.jsx"));
+const reportDate = new Date();
+const reportToday = `${reportDate.getFullYear()}-${String(reportDate.getMonth() + 1).padStart(2, "0")}-${String(reportDate.getDate()).padStart(2, "0")}`;
+const reportMonthStart = `${reportDate.getFullYear()}-${String(reportDate.getMonth() + 1).padStart(2, "0")}-01`;
 
 const emptyItem = {
   sku: "",
   name: "",
+  brand: "",
+  model: "",
+  category: "",
+  warranty: "",
   description: "",
   unit_price: "",
   quantity: "0",
@@ -35,6 +41,11 @@ const emptyPurchase = {
   reference: "",
   supplier_name: "",
   item: "",
+  item_name: "",
+  brand: "",
+  model: "",
+  category: "",
+  warranty: "",
   quantity: "1",
   unit_cost: "",
   notes: "",
@@ -44,6 +55,10 @@ const emptySale = {
   reference: "",
   item: "",
   quantity: "1",
+  transaction_type: "SALE",
+  unit_selling_price: "",
+  customer_name: "",
+  customer_phone: "",
   notes: "",
 };
 
@@ -54,8 +69,8 @@ const emptyStaffForm = {
   mobile_number: "",
   department: "",
   job_title: "",
-  start_date: "",
   password: "",
+  confirm_password: "",
 };
 
 const money = (value) =>
@@ -63,6 +78,14 @@ const money = (value) =>
     style: "currency",
     currency: "INR",
     minimumFractionDigits: 2,
+  }).format(Number(value || 0));
+
+const unitCostMoney = (value) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 4,
   }).format(Number(value || 0));
 
 const dateTime = (value) =>
@@ -129,6 +152,15 @@ async function apiRequest(path, employee, options = {}) {
   }
 
   if (!response.ok) {
+    const isHtmlResponse =
+      response.headers.get("content-type")?.includes("text/html") ||
+      (typeof data === "string" && /<!doctype html|<html[\s>]/i.test(data));
+    if (isHtmlResponse) {
+      throw new Error(
+        `The API returned an HTML error page (HTTP ${response.status}). Check the backend logs and confirm database migrations are applied.`
+      );
+    }
+
     if (data && typeof data === "object") {
       const messages = Object.entries(data).map(([key, value]) => {
         const detail = Array.isArray(value)
@@ -263,7 +295,8 @@ function Table({
           disabled={rows.length === 0 || exportableColumns.length === 0}
           aria-label={`Download ${exportName} as CSV`}
         >
-          Download CSV
+          <Download size={16} aria-hidden="true" />
+          <span>Download CSV</span>
         </button>
       </div>
       <table
@@ -333,7 +366,6 @@ function Table({
 }
 
 function LoginPage({ onLogin, sessionNotice }) {
-  const [portal, setPortal] = useState("STAFF");
   const [loginMode, setLoginMode] = useState("login");
   const [employeeId, setEmployeeId] = useState("");
   const [password, setPassword] = useState("");
@@ -383,7 +415,6 @@ function LoginPage({ onLogin, sessionNotice }) {
         method: "POST",
         body: JSON.stringify({
           employee_id: employeeId.trim(),
-          portal,
           password,
         }),
       });
@@ -413,7 +444,6 @@ function LoginPage({ onLogin, sessionNotice }) {
         method: "POST",
         body: JSON.stringify({
           employee_id: employeeId.trim(),
-          portal,
         }),
       });
       setRequestSent(true);
@@ -444,7 +474,6 @@ function LoginPage({ onLogin, sessionNotice }) {
         method: "POST",
         body: JSON.stringify({
           employee_id: employeeId.trim(),
-          portal,
           approval_code: approvalCode.trim(),
           new_password: newPassword,
         }),
@@ -491,10 +520,7 @@ function LoginPage({ onLogin, sessionNotice }) {
               INVENTORY, IN FOCUS
             </span>
             <h1>Bring your inventory into better focus.</h1>
-            <p>
-              A clear, dependable workspace for the people who keep your
-              operations moving.
-            </p>
+            <p>A clear, dependable workspace for your operations.</p>
           </div>
 
           <div className="login-visual" aria-hidden="true">
@@ -563,34 +589,12 @@ function LoginPage({ onLogin, sessionNotice }) {
               </h2>
               <p>
                 {loginMode === "login"
-                  ? `Access your ${portal === "ADMIN" ? "administrator" : "staff"} workspace.`
+                  ? "Sign in with your employee ID and password."
                   : loginMode === "request"
                     ? "An administrator must approve your request before you can reset your password."
                     : "Enter the one-time approval code provided to you by an administrator."}
               </p>
             </div>
-
-            {loginMode !== "reset" && (
-              <>
-                <div className="login-portal-label">Choose your workspace</div>
-                <div className="login-portal-tabs" role="group" aria-label="Choose sign-in portal">
-                  {[
-                    { role: "STAFF", label: "Staff" },
-                    { role: "ADMIN", label: "Admin" },
-                  ].map((entry) => (
-                    <button
-                      key={entry.role}
-                      type="button"
-                      aria-pressed={portal === entry.role}
-                      className={portal === entry.role ? "active" : ""}
-                      onClick={() => setPortal(entry.role)}
-                    >
-                      {entry.label}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
 
             <Notice message={sessionNotice} />
             <Notice message={error} error />
@@ -662,7 +666,7 @@ function LoginPage({ onLogin, sessionNotice }) {
                 </button>
                 <div className="login-trust-note">
                   <ShieldAlert size={15} aria-hidden="true" />
-                  <span>Sign in with the account assigned to your role.</span>
+                  <span>Your role is identified securely from your employee account.</span>
                 </div>
                 <div className="login-form-footer">
                   <span>Need access? Contact your system administrator.</span>
@@ -829,19 +833,7 @@ function SectionTitle({ title, subtitle, action }) {
   );
 }
 
-function statusStyle(type) {
-  return {
-    display: "inline-block",
-    padding: "5px 9px",
-    borderRadius: 20,
-    fontSize: 12,
-    fontWeight: 600,
-    color: type === "low" ? "#995500" : "#17683c",
-    background: type === "low" ? "#fff1d8" : "#e4f6eb",
-  };
-}
-
-function Dashboard({ summary, items, purchases, sales, onNavigate, refresh }) {
+function Dashboard({ summary, items, purchases, sales, onNavigate }) {
   const [healthFilter, setHealthFilter] = useState("Needs attention");
   const lowStock = items.filter(
     (item) =>
@@ -996,11 +988,6 @@ function Dashboard({ summary, items, purchases, sales, onNavigate, refresh }) {
       <PageHeading
         title="Inventory overview"
         description="Here's what's happening with your inventory today."
-        action={
-          <button style={buttonStyle} onClick={refresh}>
-            Refresh
-          </button>
-        }
       />
 
       <div style={styles.stats}>
@@ -1024,8 +1011,14 @@ function Dashboard({ summary, items, purchases, sales, onNavigate, refresh }) {
         />
         <StatCard
           title="Inventory value"
-          value={money(summary?.inventory_value)}
-          description="Quantity × unit price"
+          value={money(
+            summary?.inventory_value ?? summary?.known_inventory_value
+          )}
+          description={
+            summary?.unvalued_items > 0
+              ? `Known value; ${summary.unvalued_items} stocked item(s) need an opening cost`
+              : "Current quantity × weighted-average cost"
+          }
         />
       </div>
 
@@ -1044,44 +1037,6 @@ function Dashboard({ summary, items, purchases, sales, onNavigate, refresh }) {
           topSellingItems={topSellingItems}
         />
       </Suspense>
-
-      <section style={panelStyle}>
-        <SectionTitle
-          title="Inventory items"
-          subtitle="Your products and current stock levels"
-          action={
-            <button style={buttonStyle} onClick={() => onNavigate("Items")}>
-              View all
-            </button>
-          }
-        />
-        <Table
-          exportName="inventory-items"
-          columns={[
-            { label: "ITEM", render: (r) => <strong>{r.name}</strong> },
-            { label: "SKU", key: "sku" },
-            { label: "UNIT PRICE", render: (r) => money(r.unit_price) },
-            { label: "STOCK", render: (r) => <strong>{r.quantity}</strong> },
-            {
-              label: "STATUS",
-              render: (r) => (
-                <span
-                  style={statusStyle(
-                    Number(r.quantity) <= Number(r.reorder_level)
-                      ? "low"
-                      : "ok"
-                  )}
-                >
-                  {Number(r.quantity) <= Number(r.reorder_level)
-                    ? "Low stock"
-                    : "In stock"}
-                </span>
-              ),
-            },
-          ]}
-          rows={items.filter((i) => i.is_active).slice(0, 5)}
-        />
-      </section>
 
       <section className="inventory-health-panel">
         <div className="inventory-health-heading">
@@ -1237,6 +1192,10 @@ function ItemsPage({ items, employee, reload }) {
     setForm({
       sku: item.sku,
       name: item.name,
+      brand: item.brand || "",
+      model: item.model || "",
+      category: item.category || "",
+      warranty: item.warranty || "",
       description: item.description || "",
       unit_price: String(item.unit_price),
       quantity: String(item.quantity),
@@ -1316,7 +1275,9 @@ function ItemsPage({ items, employee, reload }) {
   }
 
   const filtered = items.filter((item) =>
-    `${item.name} ${item.sku}`.toLowerCase().includes(search.toLowerCase())
+    `${item.name} ${item.sku} ${item.brand} ${item.model} ${item.category}`
+      .toLowerCase()
+      .includes(search.toLowerCase())
   );
 
   return (
@@ -1357,6 +1318,38 @@ function ItemsPage({ items, employee, reload }) {
                   value={form.name}
                   onChange={(e) => change("name", e.target.value)}
                   required
+                />
+              </Field>
+
+              <Field label="Brand">
+                <TextInput
+                  value={form.brand}
+                  onChange={(e) => change("brand", e.target.value)}
+                  placeholder="e.g. Acme"
+                />
+              </Field>
+
+              <Field label="Model">
+                <TextInput
+                  value={form.model}
+                  onChange={(e) => change("model", e.target.value)}
+                  placeholder="Model or product number"
+                />
+              </Field>
+
+              <Field label="Category">
+                <TextInput
+                  value={form.category}
+                  onChange={(e) => change("category", e.target.value)}
+                  placeholder="e.g. Electronics"
+                />
+              </Field>
+
+              <Field label="Warranty">
+                <TextInput
+                  value={form.warranty}
+                  onChange={(e) => change("warranty", e.target.value)}
+                  placeholder="e.g. 12 months"
                 />
               </Field>
 
@@ -1477,11 +1470,18 @@ function ItemsPage({ items, employee, reload }) {
               render: (r) => (
                 <>
                   <strong>{r.name}</strong>
+                  {(r.brand || r.model) && (
+                    <div style={{ color: "#A9B8AE" }}>
+                      {[r.brand, r.model].filter(Boolean).join(" · ")}
+                    </div>
+                  )}
                   <div style={{ color: "#A9B8AE" }}>{r.description}</div>
                 </>
               ),
             },
             { label: "SKU", key: "sku" },
+            { label: "CATEGORY", key: "category" },
+            { label: "WARRANTY", key: "warranty" },
             { label: "PRICE", render: (r) => money(r.unit_price) },
             { label: "STOCK", key: "quantity" },
             { label: "REORDER AT", key: "reorder_level" },
@@ -1527,6 +1527,7 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
   const [busy, setBusy] = useState(false);
 
   const activeItems = items.filter((item) => item.is_active);
+  const addingNewItem = form.item === "other";
 
   function change(key, value) {
     setForm((old) => ({ ...old, [key]: value }));
@@ -1552,17 +1553,21 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
     setBusy(true);
 
     try {
-      await apiRequest("/api/purchases/", employee, {
+      const purchase = await apiRequest("/api/purchases/", employee, {
         method: "POST",
         body: JSON.stringify({
           ...form,
-          item: Number(form.item),
+          item: addingNewItem ? "other" : Number(form.item),
           quantity: Number(form.quantity),
           unit_cost: Number(form.unit_cost).toFixed(2),
         }),
       });
 
-      setMessage("Purchase recorded. Inventory stock has been increased.");
+      setMessage(
+        addingNewItem
+          ? `New item "${purchase.item_name}" was added to the catalog and the purchase was recorded.`
+          : "Purchase recorded. Inventory stock has been increased."
+      );
       setForm({ ...emptyPurchase });
       setShowForm(false);
 
@@ -1593,7 +1598,7 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
         <section style={panelStyle}>
           <SectionTitle
             title="Record a purchase"
-            subtitle="Stock will increase automatically after saving."
+            subtitle="Choose an existing item or add a new catalog item and record its purchase in one step."
           />
 
           <form onSubmit={submit}>
@@ -1624,11 +1629,55 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
                   <option value="">Select an item</option>
                   {activeItems.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name} ({item.sku}) — Stock: {item.quantity}
+                      {item.name} ({item.sku}){item.brand ? ` · ${item.brand}` : ""} — Stock: {item.quantity}
                     </option>
                   ))}
+                  <option value="other">Others — add a new item</option>
                 </select>
               </Field>
+
+              {addingNewItem && (
+                <>
+                  <Field label="New item name">
+                    <TextInput
+                      value={form.item_name}
+                      onChange={(e) => change("item_name", e.target.value)}
+                      maxLength={150}
+                      required
+                    />
+                  </Field>
+                  <Field label="Brand (optional)">
+                    <TextInput
+                      value={form.brand}
+                      onChange={(e) => change("brand", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Model (optional)">
+                    <TextInput
+                      value={form.model}
+                      onChange={(e) => change("model", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Category (optional)">
+                    <TextInput
+                      value={form.category}
+                      onChange={(e) => change("category", e.target.value)}
+                    />
+                  </Field>
+                  <Field label="Warranty (optional)">
+                    <TextInput
+                      value={form.warranty}
+                      onChange={(e) => change("warranty", e.target.value)}
+                    />
+                  </Field>
+                  <p className="purchase-new-item-note">
+                    A product code based on the item name is generated
+                    automatically. The purchase unit cost is recorded
+                    separately; set or update selling price in Items when
+                    needed.
+                  </p>
+                </>
+              )}
 
               <Field label="Quantity received">
                 <TextInput
@@ -1671,7 +1720,7 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
               <button
                 type="submit"
                 style={primaryButton}
-                disabled={busy || activeItems.length === 0}
+                disabled={busy || (!addingNewItem && !form.item)}
               >
                 {busy ? "Recording…" : "Record purchase"}
               </button>
@@ -1686,7 +1735,7 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
               </button>
             </div>
 
-            {activeItems.length === 0 && (
+            {activeItems.length === 0 && !addingNewItem && (
               <p style={{ color: "#a32121", fontSize: 13 }}>
                 Add or activate an inventory item before recording a purchase.
               </p>
@@ -1699,11 +1748,6 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
         <SectionTitle
           title="Purchase history"
           subtitle="Most recent purchases first."
-          action={
-            <button style={buttonStyle} onClick={reload}>
-              Refresh
-            </button>
-          }
         />
 
         <Table
@@ -1714,17 +1758,18 @@ function PurchasesPage({ items, employee, purchases, reload, reloadAll }) {
             {
               label: "ITEM",
               render: (r) =>
-                `${r.item_name || "Item"} (${r.item_sku || r.item})`,
+                `${r.item_name || "Item"} (${r.item_sku || r.item})${r.item_brand ? ` · ${r.item_brand}` : ""}${r.item_model ? ` ${r.item_model}` : ""}`,
             },
             { label: "QTY", key: "quantity" },
-            { label: "UNIT COST", render: (r) => money(r.unit_cost) },
+            {
+              label: "UNIT COST",
+              render: (r) => r.unit_cost == null ? "Restricted" : money(r.unit_cost),
+            },
             {
               label: "TOTAL",
-              render: (r) =>
-                money(
-                  r.total_cost ??
-                    Number(r.quantity) * Number(r.unit_cost)
-                ),
+              render: (r) => r.total_cost == null
+                ? "Restricted"
+                : money(r.total_cost),
             },
             { label: "RECEIVED", render: (r) => dateTime(r.received_at) },
           ]}
@@ -1777,10 +1822,22 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
           ...form,
           item: Number(form.item),
           quantity: Number(form.quantity),
+          unit_selling_price:
+            form.transaction_type === "SALE"
+              ? Number(form.unit_selling_price).toFixed(2)
+              : null,
+          customer_name:
+            form.transaction_type === "SALE" ? form.customer_name.trim() : "",
+          customer_phone:
+            form.transaction_type === "SALE" ? form.customer_phone.trim() : "",
         }),
       });
 
-      setMessage("Sale/issue recorded. Stock has been reduced.");
+      setMessage(
+        form.transaction_type === "SALE"
+          ? "Sale recorded with its selling price and inventory cost."
+          : "Stock issue recorded. Stock has been reduced."
+      );
       setForm({ ...emptySale });
       setShowForm(false);
 
@@ -1811,7 +1868,7 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
         <section style={panelStyle}>
           <SectionTitle
             title="Record outgoing stock"
-            subtitle="The system will prevent issuing more stock than is available."
+            subtitle="Sales record the actual selling price; issues are excluded from revenue."
           />
 
           <form onSubmit={submit}>
@@ -1825,6 +1882,17 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
                 />
               </Field>
 
+              <Field label="Transaction type">
+                <select
+                  style={inputStyle}
+                  value={form.transaction_type}
+                  onChange={(e) => change("transaction_type", e.target.value)}
+                >
+                  <option value="SALE">Sale</option>
+                  <option value="ISSUE">Stock issue (non-revenue)</option>
+                </select>
+              </Field>
+
               <Field label="Item">
                 <select
                   style={inputStyle}
@@ -1835,7 +1903,7 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
                   <option value="">Select an item</option>
                   {activeItems.map((item) => (
                     <option key={item.id} value={item.id}>
-                      {item.name} ({item.sku}) — Available: {item.quantity}
+                      {item.name} ({item.sku}){item.brand ? ` · ${item.brand}` : ""}{item.model ? ` ${item.model}` : ""} — Available: {item.quantity}
                     </option>
                   ))}
                 </select>
@@ -1852,6 +1920,53 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
                   required
                 />
               </Field>
+
+              {form.transaction_type === "SALE" && (
+                <>
+                  <Field label="Customer name">
+                    <TextInput
+                      value={form.customer_name}
+                      onChange={(e) => change("customer_name", e.target.value)}
+                      placeholder="Name of the customer"
+                      maxLength={150}
+                      required
+                    />
+                  </Field>
+
+                  <Field label="Customer phone number">
+                    <TextInput
+                      type="tel"
+                      inputMode="numeric"
+                      pattern="[0-9]{10}"
+                      title="Enter exactly 10 digits."
+                      value={form.customer_phone}
+                      onChange={(e) =>
+                        change(
+                          "customer_phone",
+                          e.target.value.replace(/\D/g, "").slice(0, 10)
+                        )
+                      }
+                      placeholder="Optional contact number"
+                      maxLength={10}
+                    />
+                  </Field>
+                </>
+              )}
+
+              {form.transaction_type === "SALE" && (
+                <Field label="Actual unit selling price (₹)">
+                  <TextInput
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={form.unit_selling_price}
+                    onChange={(e) =>
+                      change("unit_selling_price", e.target.value)
+                    }
+                    required
+                  />
+                </Field>
+              )}
 
               <Field label="Notes">
                 <TextInput
@@ -1873,6 +1988,25 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
                   )}
                 </strong>{" "}
                 units
+                {form.transaction_type === "SALE" &&
+                  Number(form.unit_selling_price) > 0 && (
+                    <>
+                      {" "}· Sale total:{" "}
+                      <strong>
+                        {money(
+                          Number(form.quantity) *
+                            Number(form.unit_selling_price)
+                        )}
+                      </strong>
+                    </>
+                  )}
+                {form.transaction_type === "SALE" &&
+                  selectedItem.inventory_unit_cost != null && (
+                    <>
+                      {" "}· Current average inventory cost:{" "}
+                      <strong>{unitCostMoney(selectedItem.inventory_unit_cost)}</strong>
+                    </>
+                  )}
               </p>
             )}
 
@@ -1882,7 +2016,7 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
                 style={primaryButton}
                 disabled={busy || activeItems.length === 0}
               >
-                {busy ? "Saving…" : "Record sale / issue"}
+                {busy ? "Saving…" : `Record ${form.transaction_type === "SALE" ? "sale" : "issue"}`}
               </button>
 
               <button
@@ -1909,23 +2043,40 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
         <SectionTitle
           title="Sales / issues history"
           subtitle="Recorded outgoing stock transactions."
-          action={
-            <button style={buttonStyle} onClick={reload}>
-              Refresh
-            </button>
-          }
         />
 
         <Table
           exportName="sales-issues-history"
           columns={[
             { label: "REFERENCE", key: "reference" },
+            { label: "CUSTOMER", key: "customer_name" },
+            { label: "PHONE", key: "customer_phone" },
+            {
+              label: "TYPE",
+              render: (r) => r.movement_type === "ISSUE" ? "Stock issue" : "Sale",
+            },
             {
               label: "ITEM",
               render: (r) =>
-                `${r.item_name || "Item"} (${r.item_sku || r.item})`,
+                `${r.item_name || "Item"} (${r.item_sku || r.item})${r.item_brand ? ` · ${r.item_brand}` : ""}${r.item_model ? ` ${r.item_model}` : ""}`,
             },
             { label: "QUANTITY", key: "quantity" },
+            {
+              label: "UNIT SOLD FOR",
+              render: (r) =>
+                r.movement_type !== "SALE" || r.unit_selling_price == null
+                  ? "—"
+                  : money(r.unit_selling_price),
+            },
+            {
+              label: "SALE TOTAL",
+              render: (r) =>
+                r.movement_type !== "SALE" || r.unit_selling_price == null
+                  ? "—"
+                  : money(
+                      Number(r.quantity) * Number(r.unit_selling_price)
+                    ),
+            },
             { label: "STOCK BEFORE", key: "quantity_before" },
             { label: "STOCK AFTER", key: "quantity_after" },
             { label: "NOTES", key: "notes" },
@@ -1938,9 +2089,11 @@ function SalesPage({ items, employee, sales, reload, reloadAll }) {
   );
 }
 
-function MovementsPage({ movements, items, reload }) {
+function MovementsPage({ movements, items }) {
   const [itemFilter, setItemFilter] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   const filtered = movements.filter((movement) => {
     const itemMatches =
@@ -1950,17 +2103,20 @@ function MovementsPage({ movements, items, reload }) {
 
     return itemMatches && typeMatches;
   });
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize
+  );
+  const firstRow = filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1;
+  const lastRow = Math.min(currentPage * pageSize, filtered.length);
 
   return (
     <>
       <PageHeading
         title="Stock Movements"
         description="Audit the movement of stock into and out of your inventory."
-        action={
-          <button style={buttonStyle} onClick={reload}>
-            Refresh
-          </button>
-        }
       />
 
       <section style={panelStyle}>
@@ -1969,7 +2125,10 @@ function MovementsPage({ movements, items, reload }) {
             <select
               style={inputStyle}
               value={itemFilter}
-              onChange={(e) => setItemFilter(e.target.value)}
+              onChange={(e) => {
+                setItemFilter(e.target.value);
+                setPage(1);
+              }}
             >
               <option value="">All items</option>
               {items.map((item) => (
@@ -1984,11 +2143,15 @@ function MovementsPage({ movements, items, reload }) {
             <select
               style={inputStyle}
               value={typeFilter}
-              onChange={(e) => setTypeFilter(e.target.value)}
+              onChange={(e) => {
+                setTypeFilter(e.target.value);
+                setPage(1);
+              }}
             >
               <option value="">All movements</option>
               <option value="PURCHASE">Purchase / inbound</option>
-              <option value="SALE">Sale / issue</option>
+              <option value="SALE">Sale</option>
+              <option value="ISSUE">Stock issue</option>
               <option value="ADJUSTMENT">Adjustment</option>
             </select>
           </Field>
@@ -2014,157 +2177,629 @@ function MovementsPage({ movements, items, reload }) {
               render: (r) => r.created_by_username || "—",
             },
           ]}
-          rows={filtered}
+          rows={pageRows}
         />
 
-        <p style={{ color: "#A9B8AE", fontSize: 12 }}>
-          Showing {filtered.length} of {movements.length} movement records.
-        </p>
+        <div className="report-pager">
+          <span>
+            Showing {firstRow} to {lastRow} of {filtered.length}
+          </span>
+          <div>
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={currentPage <= 1}
+              onClick={() => setPage(currentPage - 1)}
+            >
+              Previous
+            </button>
+            <button
+              type="button"
+              style={buttonStyle}
+              disabled={currentPage >= pageCount}
+              onClick={() => setPage(currentPage + 1)}
+            >
+              Next
+            </button>
+          </div>
+        </div>
       </section>
     </>
   );
 }
 
-function ReportsPage({ items, purchases, sales, movements, summary, refresh }) {
-  const activeItems = items.filter((item) => item.is_active);
-  const lowStock = activeItems.filter(
-    (item) => Number(item.quantity) <= Number(item.reorder_level)
+function ReportPager({ data, onChange }) {
+  if (!data || data.pages <= 1) return null;
+  return (
+    <div className="report-pager">
+      <span>
+        Page {data.page} of {data.pages} · {data.count} records
+      </span>
+      <div>
+        <button
+          type="button"
+          style={buttonStyle}
+          disabled={data.page <= 1}
+          onClick={() => onChange(data.page - 1)}
+        >
+          Previous
+        </button>
+        <button
+          type="button"
+          style={buttonStyle}
+          disabled={data.page >= data.pages}
+          onClick={() => onChange(data.page + 1)}
+        >
+          Next
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const REPORT_TABS = [
+  { id: "sales", label: "Sales report" },
+  { id: "purchases", label: "Purchase report" },
+  { id: "items", label: "Item report" },
+];
+
+function ReportTabs({ activeTab, onSelect }) {
+  return (
+    <nav className="report-tabs" aria-label="Report type">
+      {REPORT_TABS.map((tab) => (
+        <button
+          key={tab.id}
+          type="button"
+          className={activeTab === tab.id ? "report-tab is-active" : "report-tab"}
+          aria-current={activeTab === tab.id ? "page" : undefined}
+          onClick={() => onSelect(tab.id)}
+        >
+          {tab.label}
+        </button>
+      ))}
+    </nav>
+  );
+}
+
+function ReportsPage({ employee, items, purchases, sales }) {
+  const admin = employee.role === "ADMIN";
+  const [activeTab, setActiveTab] = useState("sales");
+  const [filters, setFilters] = useState({
+    period: "month",
+    startDate: reportMonthStart,
+    endDate: reportToday,
+  });
+  const [pages, setPages] = useState({
+    inventory_page: 1,
+    purchase_page: 1,
+    sales_page: 1,
+  });
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [reportRefreshKey, setReportRefreshKey] = useState(0);
+  const [downloading, setDownloading] = useState("");
+  const [openingItem, setOpeningItem] = useState("");
+  const [openingCost, setOpeningCost] = useState("");
+  const [openingBusy, setOpeningBusy] = useState(false);
+  const [openingMessage, setOpeningMessage] = useState("");
+  const [openingError, setOpeningError] = useState("");
+
+  useEffect(() => {
+    if (!admin) {
+      setReportLoading(false);
+      return undefined;
+    }
+    if (
+      filters.period === "custom" &&
+      (!filters.startDate || !filters.endDate || filters.endDate < filters.startDate)
+    ) {
+      setReportLoading(false);
+      return undefined;
+    }
+    let active = true;
+    let loading = false;
+
+    async function loadReport(silent = false) {
+      if (loading) return;
+      loading = true;
+      if (!silent) setReportLoading(true);
+      const query = new URLSearchParams({
+        period: filters.period,
+        inventory_page: String(pages.inventory_page),
+        purchase_page: String(pages.purchase_page),
+        sales_page: String(pages.sales_page),
+      });
+      if (filters.period === "custom") {
+        query.set("start_date", filters.startDate);
+        query.set("end_date", filters.endDate);
+      }
+      try {
+        const data = await apiRequest(`/api/reports/?${query}`, employee);
+        if (active) {
+          setReport(data);
+          setError("");
+        }
+      } catch (err) {
+        if (active) setError(err.message || "Unable to load reports.");
+      } finally {
+        loading = false;
+        if (active && !silent) setReportLoading(false);
+      }
+    }
+
+    loadReport();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadReport(true);
+    }, 30000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") loadReport(true);
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [admin, employee, filters, pages, reportRefreshKey]);
+
+  const lowStock = items.filter(
+    (item) => item.is_active && Number(item.quantity) <= Number(item.reorder_level)
   );
 
-  const totalPurchaseValue = purchases.reduce(
-    (sum, purchase) =>
-      sum +
-      Number(
-        purchase.total_cost ??
-          Number(purchase.quantity) * Number(purchase.unit_cost)
-      ),
-    0
-  );
+  async function downloadActiveReport() {
+    setDownloading(activeTab);
+    setError("");
+    try {
+      const reportKey = {
+        sales: "sales",
+        purchases: "purchases",
+        items: "inventory",
+      }[activeTab];
+      const pageParameter = {
+        sales: "sales_page",
+        purchases: "purchase_page",
+        items: "inventory_page",
+      }[activeTab];
+      let rows;
+      if (admin) {
+        const allRows = [];
+        let page = 1;
+        let pageCount = 1;
+        while (page <= pageCount) {
+          const query = new URLSearchParams({
+            period: filters.period,
+            page_size: "100",
+            inventory_page: "1",
+            purchase_page: "1",
+            sales_page: "1",
+            [pageParameter]: String(page),
+          });
+          if (filters.period === "custom") {
+            query.set("start_date", filters.startDate);
+            query.set("end_date", filters.endDate);
+          }
+          const data = await apiRequest(`/api/reports/?${query}`, employee);
+          const resultPage = data[reportKey];
+          allRows.push(...resultPage.results);
+          pageCount = resultPage.pages;
+          page += 1;
+        }
+        rows = allRows;
+      } else if (activeTab === "sales") {
+        rows = sales.filter((sale) => sale.movement_type === "SALE");
+      } else if (activeTab === "purchases") {
+        rows = purchases;
+      } else {
+        rows = items;
+      }
+
+      const columns = {
+        sales: [
+          ["Reference", (row) => row.reference],
+          ["Item", (row) => `${row.item_name || "Item"} (${row.item_sku || row.item || ""})`],
+          ["Quantity", (row) => row.quantity],
+          ["Unit selling price (INR)", (row) => row.unit_selling_price ?? "Restricted"],
+          ["Revenue (INR)", (row) => row.sales_revenue ?? (row.unit_selling_price == null ? "Restricted" : Number(row.quantity) * Number(row.unit_selling_price))],
+          ["COGS (INR)", (row) => row.cogs ?? "Restricted"],
+          ["Gross profit / loss (INR)", (row) => row.gross_profit ?? "Restricted"],
+          ["Date", (row) => row.created_at],
+          ["Status", (row) => row.status || "COMPLETED"],
+        ],
+        purchases: [
+          ["Reference", (row) => row.reference],
+          ["Supplier", (row) => row.supplier_name],
+          ["Item", (row) => `${row.item_name || "Item"} (${row.item_sku || row.item || ""})`],
+          ["Quantity", (row) => row.quantity],
+          ["Unit cost (INR)", (row) => row.unit_cost ?? "Restricted"],
+          ["Total (INR)", (row) => row.total_cost ?? "Restricted"],
+          ["Date", (row) => row.received_at],
+          ["Status", (row) => row.status || "RECEIVED"],
+        ],
+        items: [
+          ["SKU", (row) => row.sku],
+          ["Item", (row) => row.name],
+          ["Brand", (row) => row.brand],
+          ["Model", (row) => row.model],
+          ["Category", (row) => row.category],
+          ["Available quantity", (row) => row.quantity],
+          ["Reorder level", (row) => row.reorder_level],
+          ["Valuation unit cost (INR)", (row) => row.unit_cost ?? row.inventory_unit_cost ?? "Restricted"],
+          ["Selling price (INR)", (row) => row.selling_price ?? row.unit_price],
+          ["Inventory value (INR)", (row) => row.inventory_value ?? "Restricted"],
+          ["Stock status", (row) => row.stock_status || (Number(row.quantity) === 0 ? "OUT OF STOCK" : Number(row.quantity) <= Number(row.reorder_level) ? "LOW STOCK" : "IN STOCK")],
+        ],
+      }[activeTab];
+
+      const filename = {
+        sales: "sales-report",
+        purchases: "purchase-report",
+        items: "item-report",
+      }[activeTab];
+      const reportPeriod =
+        admin && report
+          ? `${report.start_date} to ${report.end_date}`
+          : "All available records";
+      const generatedAt = new Date().toLocaleString("en-IN");
+      const exportColumns = [
+        ["Report", () => REPORT_TABS.find((tab) => tab.id === activeTab).label],
+        ["Period", () => reportPeriod],
+        ["Generated", () => generatedAt],
+        ["Currency", () => "INR"],
+        ...columns,
+      ];
+      downloadCsv(
+        filename,
+        exportColumns.map(([label]) => label),
+        rows.map((row) =>
+          exportColumns.map(([, value]) => exportText(value(row)))
+        )
+      );
+    } catch (err) {
+      setError(err.message || "Unable to download this report.");
+    } finally {
+      setDownloading("");
+    }
+  }
+
+  async function initializeOpeningCost(event) {
+    event.preventDefault();
+    setOpeningBusy(true);
+    setOpeningError("");
+    setOpeningMessage("");
+    try {
+      await apiRequest(
+        `/api/items/${openingItem}/initialize-cost/`,
+        employee,
+        {
+          method: "POST",
+          body: JSON.stringify({ unit_cost: Number(openingCost).toFixed(4) }),
+        }
+      );
+      setOpeningItem("");
+      setOpeningCost("");
+      setOpeningMessage("Opening stock cost initialized. Historical sales remain unchanged.");
+      setReportRefreshKey((value) => value + 1);
+    } catch (err) {
+      setOpeningError(err.message);
+    } finally {
+      setOpeningBusy(false);
+    }
+  }
+
+  if (!admin) {
+    return (
+      <div className="reports-page">
+        <PageHeading
+          title="Reports"
+          description="Review live sales, purchase, and inventory records."
+          action={
+            <div className="report-heading-actions">
+              <button
+                type="button"
+                className="report-download-button"
+                onClick={downloadActiveReport}
+                disabled={Boolean(downloading)}
+              >
+                <Download size={17} aria-hidden="true" />
+                {downloading ? "Preparing…" : "Download report"}
+              </button>
+              <button
+                type="button"
+                className="report-print-button"
+                onClick={() => window.print()}
+              >
+                Print report
+              </button>
+            </div>
+          }
+        />
+        <ReportTabs activeTab={activeTab} onSelect={setActiveTab} />
+        {activeTab === "sales" && (
+          <section className="report-section" style={panelStyle}>
+            <SectionTitle title="Sales report" subtitle="Completed sales and the actual selling prices recorded." />
+            <Table
+              exportName="sales-report"
+              columns={[
+                { label: "REFERENCE", key: "reference" },
+                { label: "ITEM", render: (row) => `${row.item_name || "Item"} (${row.item_sku || row.item})` },
+                { label: "QUANTITY", key: "quantity" },
+                { label: "UNIT SOLD FOR", render: (row) => row.unit_selling_price == null ? "—" : money(row.unit_selling_price) },
+                { label: "DATE", render: (row) => dateTime(row.created_at) },
+              ]}
+              rows={sales.filter((sale) => sale.movement_type === "SALE")}
+              emptyMessage="No sales have been recorded."
+            />
+          </section>
+        )}
+        {activeTab === "purchases" && (
+          <section className="report-section" style={panelStyle}>
+            <SectionTitle title="Purchase report" subtitle="Received purchase records. Financial cost details follow your access permissions." />
+            <Table
+              exportName="purchase-report"
+              columns={[
+                { label: "REFERENCE", key: "reference" },
+                { label: "SUPPLIER", key: "supplier_name" },
+                { label: "ITEM", render: (row) => `${row.item_name || "Item"} (${row.item_sku || row.item})` },
+                { label: "QUANTITY", key: "quantity" },
+                { label: "DATE", render: (row) => dateTime(row.received_at) },
+              ]}
+              rows={purchases}
+              emptyMessage="No purchases have been recorded."
+            />
+          </section>
+        )}
+        {activeTab === "items" && (
+          <>
+            <section className="report-section" style={panelStyle}>
+              <SectionTitle title="Item report" subtitle="Catalog details, available stock, and reorder status." />
+              <Table
+                exportName="item-report"
+                columns={[
+                  { label: "SKU", key: "sku" },
+                  { label: "ITEM", key: "name" },
+                  { label: "BRAND", key: "brand" },
+                  { label: "MODEL", key: "model" },
+                  { label: "CATEGORY", key: "category" },
+                  { label: "WARRANTY", key: "warranty" },
+                  { label: "AVAILABLE", key: "quantity" },
+                  { label: "REORDER LEVEL", key: "reorder_level" },
+                  { label: "SELLING PRICE", render: (row) => money(row.unit_price) },
+                  { label: "STATUS", render: (row) => Number(row.quantity) === 0 ? "OUT OF STOCK" : Number(row.quantity) <= Number(row.reorder_level) ? "LOW STOCK" : "IN STOCK" },
+                ]}
+                rows={items}
+                emptyMessage="No catalog items have been created."
+              />
+            </section>
+            <section className="report-section" style={panelStyle}>
+              <SectionTitle title="Items requiring attention" subtitle="Active items at or below their reorder level." />
+              <Table
+                exportName="low-stock-report"
+                columns={[
+                  { label: "ITEM", key: "name" },
+                  { label: "SKU", key: "sku" },
+                  { label: "AVAILABLE", key: "quantity" },
+                  { label: "REORDER LEVEL", key: "reorder_level" },
+                ]}
+                rows={lowStock}
+                emptyMessage="All active items are above their reorder levels."
+              />
+            </section>
+          </>
+        )}
+      </div>
+    );
+  }
+
+  const summary = report?.summary;
+  const inventoryRows = report?.inventory?.results || [];
 
   return (
-    <>
+    <div className="reports-page">
       <PageHeading
         title="Reports"
-        description="An overview of stock levels, inventory value and transaction activity."
+        description="Explore filtered sales, purchasing, and inventory performance."
         action={
-          <button style={buttonStyle} onClick={refresh}>
-            Refresh reports
-          </button>
+          <div className="report-heading-actions">
+            <button
+              type="button"
+              className="report-download-button"
+              onClick={downloadActiveReport}
+              disabled={Boolean(downloading) || reportLoading}
+            >
+              <Download size={17} aria-hidden="true" />
+              {downloading ? "Preparing…" : "Download report"}
+            </button>
+            <button
+              type="button"
+              className="report-print-button"
+              onClick={() => window.print()}
+            >
+              Print report
+            </button>
+          </div>
         }
       />
 
-      <div style={styles.stats}>
-        <StatCard
-          title="Active items"
-          value={activeItems.length}
-          description="Active catalog records"
-        />
-        <StatCard
-          title="Inventory value"
-          value={money(
-            summary?.inventory_value ??
-              activeItems.reduce(
-                (sum, item) =>
-                  sum + Number(item.quantity) * Number(item.unit_price),
-                0
-              )
-          )}
-          description="Current quantity × unit price"
-        />
-        <StatCard
-          title="Purchase records"
-          value={purchases.length}
-          description="Recorded incoming transactions"
-        />
-        <StatCard
-          title="Sales / issues"
-          value={sales.length}
-          description="Recorded outgoing transactions"
-        />
-      </div>
+      <ReportTabs activeTab={activeTab} onSelect={setActiveTab} />
 
-      <section style={panelStyle}>
-        <SectionTitle
-          title="Stock status report"
-          subtitle="Current stock against each item's reorder level."
-        />
-        <Table
-          exportName="stock-status-report"
-          columns={[
-            { label: "ITEM", render: (r) => <strong>{r.name}</strong> },
-            { label: "SKU", key: "sku" },
-            { label: "CURRENT STOCK", key: "quantity" },
-            { label: "REORDER LEVEL", key: "reorder_level" },
-            { label: "UNIT PRICE", render: (r) => money(r.unit_price) },
-            {
-              label: "STOCK VALUE",
-              render: (r) =>
-                money(Number(r.quantity) * Number(r.unit_price)),
-            },
-            {
-              label: "STATUS",
-              render: (r) =>
-                Number(r.quantity) <= Number(r.reorder_level)
-                  ? "LOW STOCK"
-                  : "IN STOCK",
-            },
-          ]}
-          rows={activeItems}
-        />
+      <section className="report-filter-panel" aria-label="Report date filters">
+        <Field label="Reporting period">
+          <select
+            style={inputStyle}
+            value={filters.period}
+            onChange={(event) => {
+              setReport(null);
+              setError("");
+              setPages({ inventory_page: 1, purchase_page: 1, sales_page: 1 });
+              setFilters((current) => ({
+                ...current,
+                period: event.target.value,
+              }));
+            }}
+          >
+            <option value="today">Today</option>
+            <option value="week">This week</option>
+            <option value="month">This month</option>
+            <option value="year">This year</option>
+            <option value="custom">Custom range</option>
+          </select>
+        </Field>
+        {filters.period === "custom" && (
+          <>
+            <Field label="Start date">
+              <TextInput
+                type="date"
+                value={filters.startDate}
+                onChange={(event) => {
+                  setReport(null);
+                  setPages({ inventory_page: 1, purchase_page: 1, sales_page: 1 });
+                  setFilters((current) => ({
+                    ...current,
+                    startDate: event.target.value,
+                  }));
+                }}
+                required
+              />
+            </Field>
+            <Field label="End date">
+              <TextInput
+                type="date"
+                value={filters.endDate}
+                onChange={(event) => {
+                  setReport(null);
+                  setPages({ inventory_page: 1, purchase_page: 1, sales_page: 1 });
+                  setFilters((current) => ({
+                    ...current,
+                    endDate: event.target.value,
+                  }));
+                }}
+                required
+              />
+            </Field>
+          </>
+        )}
+        <span className="report-auto-update" role="status">
+          Updates automatically
+        </span>
       </section>
 
-      <section style={panelStyle}>
-        <SectionTitle
-          title="Low-stock report"
-          subtitle={`${lowStock.length} active item(s) at or below reorder level.`}
-        />
-        <Table
-          exportName="low-stock-report"
-          columns={[
-            { label: "ITEM", key: "name" },
-            { label: "SKU", key: "sku" },
-            { label: "CURRENT STOCK", key: "quantity" },
-            { label: "REORDER LEVEL", key: "reorder_level" },
-          ]}
-          rows={lowStock}
-          emptyMessage="All active items are above their reorder levels."
-        />
-      </section>
-
-      <section style={panelStyle}>
-        <SectionTitle
-          title="Transaction summary"
-          subtitle="Totals based on the transaction records currently loaded."
-        />
-        <div style={styles.stats}>
-          <StatCard
-            title="Purchase value"
-            value={money(totalPurchaseValue)}
-            description="Sum of recorded purchase costs"
-          />
-          <StatCard
-            title="Purchase transactions"
-            value={purchases.length}
-            description="Incoming transactions"
-          />
-          <StatCard
-            title="Sale / issue transactions"
-            value={sales.length}
-            description="Outgoing transactions"
-          />
-          <StatCard
-            title="Stock movement records"
-            value={movements.length}
-            description="All recorded stock movements"
-          />
+      {report && (
+        <div className="report-meta">
+          <span>Period: {report.start_date} to {report.end_date}</span>
+          <span>Generated: {dateTime(report.generated_at)} · Currency: INR</span>
         </div>
-        <p style={{ color: "#A9B8AE", fontSize: 12, marginTop: 16 }}>
-          Purchase value is calculated from recorded purchase quantities and
-          unit costs. This report does not calculate profit because sale prices
-          and cost-of-goods accounting are not configured.
-        </p>
-      </section>
-    </>
+      )}
+      <div className="report-model-note">
+        Operating expenses, other income, discounts, taxes, returns, and
+        cancellations are not tracked by the current transaction models.
+        Net profit is therefore not presented. CSV downloads contain the
+        full filtered report; data refreshes automatically.
+      </div>
+      <Notice message={error} error />
+      <Notice message={openingMessage} />
+      <Notice message={openingError} error />
+      {reportLoading && !report && !error && <p className="workspace-loading" role="status">Loading reports…</p>}
+
+      {report && (
+        <>
+          {activeTab === "items" && summary.unvalued_items > 0 && (
+            <section className="report-section" style={panelStyle}>
+              <SectionTitle title="Initialize opening stock cost" subtitle="Provide a documented opening valuation for existing stock with unknown cost. Quantities and historical sales are unchanged." />
+              <form className="opening-cost-form" onSubmit={initializeOpeningCost}>
+                <Field label="Stock item">
+                  <select style={inputStyle} value={openingItem} onChange={(event) => setOpeningItem(event.target.value)} required>
+                    <option value="">Select an unvalued item from this page</option>
+                    {inventoryRows.filter((row) => row.quantity > 0 && row.unit_cost == null).map((row) => (
+                      <option key={row.id} value={row.id}>{row.name} ({row.sku}) — {row.quantity} units</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Opening average unit cost (₹)">
+                  <TextInput type="number" min="0" step="0.0001" value={openingCost} onChange={(event) => setOpeningCost(event.target.value)} required />
+                </Field>
+                <button type="submit" style={primaryButton} disabled={openingBusy || !openingItem}>
+                  {openingBusy ? "Saving…" : "Initialize cost"}
+                </button>
+              </form>
+            </section>
+          )}
+
+          {activeTab === "items" && (
+            <>
+              <section className="report-section" style={panelStyle}>
+                <SectionTitle title="Current item report" subtitle="Catalog information, available units, valuation, and reorder status." />
+                <Table
+                  exportName="current-stock-report"
+                  columns={[
+                    { label: "SKU", key: "sku" },
+                    { label: "ITEM", key: "name" },
+                    { label: "BRAND", key: "brand" },
+                    { label: "MODEL", key: "model" },
+                    { label: "CATEGORY", key: "category" },
+                    { label: "AVAILABLE", key: "quantity" },
+                    { label: "REORDER LEVEL", key: "reorder_level" },
+                    { label: "UNIT COST", render: (row) => row.unit_cost == null ? "Unknown" : unitCostMoney(row.unit_cost) },
+                    { label: "SELLING PRICE", render: (row) => money(row.selling_price) },
+                    { label: "INVENTORY VALUE", render: (row) => row.inventory_value == null ? "Unknown" : money(row.inventory_value) },
+                    { label: "STATUS", key: "stock_status" },
+                  ]}
+                  rows={inventoryRows}
+                />
+                <ReportPager data={report.inventory} onChange={(page) => setPages((current) => ({ ...current, inventory_page: page }))} />
+              </section>
+            </>
+          )}
+
+          {activeTab === "purchases" && (
+            <section className="report-section" style={panelStyle}>
+              <SectionTitle title="Purchase transactions" subtitle="Received purchase transactions; these are inventory additions, not operating expenses." />
+              <Table
+                exportName="purchase-report"
+                columns={[
+                  { label: "REFERENCE", key: "reference" },
+                  { label: "SUPPLIER", key: "supplier_name" },
+                  { label: "ITEM", render: (row) => `${row.item_name} (${row.item_sku})${row.item_brand ? ` · ${row.item_brand}` : ""}${row.item_model ? ` ${row.item_model}` : ""}` },
+                  { label: "QUANTITY", key: "quantity" },
+                  { label: "UNIT COST", render: (row) => money(row.unit_cost) },
+                  { label: "TOTAL", render: (row) => money(row.total_cost) },
+                  { label: "DATE", render: (row) => dateTime(row.received_at) },
+                  { label: "STATUS", key: "status" },
+                ]}
+                rows={report.purchases.results}
+              />
+              <ReportPager data={report.purchases} onChange={(page) => setPages((current) => ({ ...current, purchase_page: page }))} />
+            </section>
+          )}
+
+          {activeTab === "sales" && (
+            <section className="report-section" style={panelStyle}>
+              <SectionTitle title="Sales transactions" subtitle="Selling prices and inventory costs captured when each sale was recorded." />
+              <Table
+                exportName="sales-report"
+                columns={[
+                  { label: "REFERENCE", key: "reference" },
+                  { label: "CUSTOMER", key: "customer_name" },
+                  { label: "PHONE", key: "customer_phone" },
+                  { label: "ITEM", render: (row) => `${row.item_name} (${row.item_sku})${row.item_brand ? ` · ${row.item_brand}` : ""}${row.item_model ? ` ${row.item_model}` : ""}` },
+                  { label: "QUANTITY", key: "quantity" },
+                  { label: "SELLING PRICE", render: (row) => row.unit_selling_price == null ? "Unknown" : money(row.unit_selling_price) },
+                  { label: "REVENUE", render: (row) => row.sales_revenue == null ? "Unknown" : money(row.sales_revenue) },
+                  { label: "COGS", render: (row) => row.cogs == null ? "Unknown" : money(row.cogs) },
+                  { label: "GROSS PROFIT / LOSS", render: (row) => row.gross_profit == null ? "Unavailable" : money(row.gross_profit) },
+                  { label: "DATE", render: (row) => dateTime(row.created_at) },
+                  { label: "STATUS", key: "status" },
+                ]}
+                rows={report.sales.results}
+              />
+              <ReportPager data={report.sales} onChange={(page) => setPages((current) => ({ ...current, sales_page: page }))} />
+            </section>
+          )}
+        </>
+      )}
+    </div>
   );
 }
 
@@ -2179,8 +2814,8 @@ function StaffManagementPage({ employee }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
-  async function loadStaff() {
-    setLoading(true);
+  const loadStaff = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
     setError("");
     try {
       const data = await apiRequest("/api/auth/staff/", employee);
@@ -2188,26 +2823,26 @@ function StaffManagementPage({ employee }) {
     } catch (err) {
       setError(err.message || "Unable to load staff accounts.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
-  }
+  }, [employee]);
 
   useEffect(() => {
-    let active = true;
-    apiRequest("/api/auth/staff/", employee)
-      .then((data) => {
-        if (active) setStaff(Array.isArray(data) ? data : data.results || []);
-      })
-      .catch((err) => {
-        if (active) setError(err.message || "Unable to load staff accounts.");
-      })
-      .finally(() => {
-        if (active) setLoading(false);
-      });
-    return () => {
-      active = false;
+    loadStaff();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadStaff(true);
+    }, 30000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") loadStaff(true);
     };
-  }, [employee]);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [loadStaff]);
 
   function updateForm(key, value) {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -2223,8 +2858,8 @@ function StaffManagementPage({ employee }) {
       mobile_number: record.mobile_number || "",
       department: record.department || "",
       job_title: record.job_title || "",
-      start_date: record.start_date || "",
       password: "",
+      confirm_password: "",
     });
     setMessage("");
     setError("");
@@ -2241,15 +2876,21 @@ function StaffManagementPage({ employee }) {
 
   async function submitStaff(event) {
     event.preventDefault();
+    if (!editingStaff && form.password !== form.confirm_password) {
+      setError("Password and confirm password do not match.");
+      setMessage("");
+      return;
+    }
+
     setBusy(true);
     setMessage("");
     setError("");
     const payload = { ...form };
+    delete payload.confirm_password;
     if (editingStaff) {
       delete payload.employee_id;
       delete payload.password;
     }
-    if (!payload.start_date) payload.start_date = null;
 
     try {
       await apiRequest(
@@ -2330,30 +2971,20 @@ function StaffManagementPage({ employee }) {
         title="Staff management"
         description="Create staff accounts and manage access to the inventory workspace."
         action={
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <button
-              type="button"
-              style={primaryButton}
-              onClick={() => {
-                setEditingStaff(null);
-                setForm({ ...emptyStaffForm });
-                setMessage("");
-                setError("");
-                setShowStaffForm(true);
-              }}
-              disabled={busy}
-            >
-              Add staff member
-            </button>
-            <button
-              type="button"
-              style={buttonStyle}
-              onClick={loadStaff}
-              disabled={loading || busy}
-            >
-              Refresh staff
-            </button>
-          </div>
+          <button
+            type="button"
+            style={primaryButton}
+            onClick={() => {
+              setEditingStaff(null);
+              setForm({ ...emptyStaffForm });
+              setMessage("");
+              setError("");
+              setShowStaffForm(true);
+            }}
+            disabled={busy}
+          >
+            Add staff member
+          </button>
         }
       />
       <Notice message={message} />
@@ -2406,12 +3037,18 @@ function StaffManagementPage({ employee }) {
               <Field label="Mobile number">
                 <TextInput
                   type="tel"
+                  inputMode="numeric"
+                  pattern="[0-9]{10}"
+                  title="Enter exactly 10 digits."
                   value={form.mobile_number}
                   onChange={(event) =>
-                    updateForm("mobile_number", event.target.value)
+                    updateForm(
+                      "mobile_number",
+                      event.target.value.replace(/\D/g, "").slice(0, 10)
+                    )
                   }
                   required
-                  maxLength={20}
+                  maxLength={10}
                   autoComplete="tel"
                 />
               </Field>
@@ -2433,28 +3070,33 @@ function StaffManagementPage({ employee }) {
                   maxLength={100}
                 />
               </Field>
-              <Field label="Start date">
-                <TextInput
-                  type="date"
-                  value={form.start_date}
-                  onChange={(event) =>
-                    updateForm("start_date", event.target.value)
-                  }
-                />
-              </Field>
               {!editingStaff && (
-                <Field label="Initial password">
-                  <TextInput
-                    type="password"
-                    value={form.password}
-                    onChange={(event) =>
-                      updateForm("password", event.target.value)
-                    }
-                    required
-                    autoComplete="new-password"
-                    minLength={8}
-                  />
-                </Field>
+                <>
+                  <Field label="Password">
+                    <TextInput
+                      type="password"
+                      value={form.password}
+                      onChange={(event) =>
+                        updateForm("password", event.target.value)
+                      }
+                      required
+                      autoComplete="new-password"
+                      minLength={8}
+                    />
+                  </Field>
+                  <Field label="Confirm password">
+                    <TextInput
+                      type="password"
+                      value={form.confirm_password}
+                      onChange={(event) =>
+                        updateForm("confirm_password", event.target.value)
+                      }
+                      required
+                      autoComplete="new-password"
+                      minLength={8}
+                    />
+                  </Field>
+                </>
               )}
             </div>
             <div className="staff-form-actions">
@@ -2565,195 +3207,6 @@ function StaffManagementPage({ employee }) {
   );
 }
 
-function InventoryResetPage({ employee, refresh }) {
-  const [challenge, setChallenge] = useState(null);
-  const [enteredCode, setEnteredCode] = useState("");
-  const [confirmationText, setConfirmationText] = useState("");
-  const [requestingCode, setRequestingCode] = useState(false);
-  const [resetting, setResetting] = useState(false);
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-
-  async function requestChallenge() {
-    setRequestingCode(true);
-    setError("");
-    setMessage("");
-    setEnteredCode("");
-    setConfirmationText("");
-    try {
-      const data = await apiRequest("/api/admin/reset-challenge/", employee, {
-        method: "POST",
-      });
-      setChallenge(data);
-    } catch (err) {
-      setError(err.message || "Unable to generate a reset code.");
-    } finally {
-      setRequestingCode(false);
-    }
-  }
-
-  async function confirmReset(event) {
-    event.preventDefault();
-    if (enteredCode.trim() !== challenge?.code) {
-      setError("Enter the security code exactly as shown.");
-      return;
-    }
-    if (confirmationText.trim() !== "RESET INVENTORY") {
-      setError("Type RESET INVENTORY to confirm this action.");
-      return;
-    }
-
-    setResetting(true);
-    setError("");
-    setMessage("");
-    try {
-      const result = await apiRequest("/api/admin/reset/", employee, {
-        method: "POST",
-        body: JSON.stringify({
-          code: enteredCode.trim(),
-          confirmation: confirmationText.trim(),
-        }),
-      });
-      setChallenge(null);
-      setEnteredCode("");
-      setConfirmationText("");
-      setMessage(
-        `Inventory reset complete. Removed ${result.deleted.items} item(s), ${result.deleted.purchases} purchase(s), and ${result.deleted.stock_movements} stock movement(s). Staff accounts and login history were preserved.`
-      );
-      await refresh();
-    } catch (err) {
-      setError(err.message || "Unable to reset inventory data.");
-    } finally {
-      setResetting(false);
-    }
-  }
-
-  async function cancelChallenge() {
-    try {
-      await apiRequest("/api/admin/reset-challenge/cancel/", employee, {
-        method: "POST",
-      });
-    } catch (err) {
-      setError(err.message || "Unable to cancel the reset challenge.");
-    } finally {
-      setChallenge(null);
-      setEnteredCode("");
-      setConfirmationText("");
-    }
-  }
-
-  if (employee?.role !== "ADMIN") {
-    return (
-      <section style={panelStyle}>
-        <h2>Access denied</h2>
-        <p>Only administrators can reset inventory data.</p>
-      </section>
-    );
-  }
-
-  return (
-    <>
-      <PageHeading
-        title="Inventory reset"
-        description="Permanently clear operational inventory records."
-      />
-      <Notice message={message} />
-      <Notice message={error} error />
-
-      <section className="reset-danger-panel" aria-labelledby="reset-panel-title">
-        <div className="reset-danger-heading">
-          <div className="reset-danger-icon" aria-hidden="true">
-            <ShieldAlert size={21} />
-          </div>
-          <div>
-            <h2 id="reset-panel-title">Reset inventory records</h2>
-            <p>This action permanently deletes the following data:</p>
-          </div>
-        </div>
-
-        <ul className="reset-data-list">
-          <li>All inventory items and current stock quantities</li>
-          <li>All purchase records</li>
-          <li>All sales and stock movement history</li>
-        </ul>
-
-        <div className="reset-preservation-note">
-          Staff accounts and login history are not deleted.
-        </div>
-
-        {!challenge ? (
-          <button
-            type="button"
-            className="reset-request-button"
-            onClick={requestChallenge}
-            disabled={requestingCode}
-          >
-            <RotateCcw size={17} aria-hidden="true" />
-            {requestingCode ? "Generating code…" : "Start inventory reset"}
-          </button>
-        ) : (
-          <form className="reset-confirmation-form" onSubmit={confirmReset}>
-            <div className="reset-code-card">
-              <div>
-                <strong>Security check</strong>
-                <p>Enter this code to continue. It expires in five minutes.</p>
-              </div>
-              <output aria-label="Reset security code">{challenge.code}</output>
-            </div>
-
-            <div className="reset-input-grid">
-              <Field label="Security code">
-                <TextInput
-                  value={enteredCode}
-                  onChange={(event) => setEnteredCode(event.target.value)}
-                  required
-                  inputMode="numeric"
-                  pattern="[0-9]{6}"
-                  maxLength={6}
-                  autoComplete="off"
-                  placeholder="Enter the six-digit code"
-                />
-              </Field>
-              <Field label='Type "RESET INVENTORY" to confirm'>
-                <TextInput
-                  value={confirmationText}
-                  onChange={(event) => setConfirmationText(event.target.value)}
-                  required
-                  autoComplete="off"
-                  placeholder="RESET INVENTORY"
-                />
-              </Field>
-            </div>
-
-            <div className="reset-actions">
-              <button
-                type="submit"
-                className="reset-confirm-button"
-                disabled={
-                  resetting ||
-                  enteredCode.trim() !== challenge.code ||
-                  confirmationText.trim() !== "RESET INVENTORY"
-                }
-              >
-                <Trash2 size={17} aria-hidden="true" />
-                {resetting ? "Resetting inventory…" : "Permanently reset inventory"}
-              </button>
-              <button
-                type="button"
-                className="reset-cancel-button"
-                onClick={cancelChallenge}
-                disabled={resetting}
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        )}
-      </section>
-    </>
-  );
-}
-
 function PasswordResetRequestsPage({ employee, onCountChange }) {
   const [requests, setRequests] = useState([]);
   const [loadingRequests, setLoadingRequests] = useState(true);
@@ -2786,7 +3239,7 @@ function PasswordResetRequestsPage({ employee, onCountChange }) {
     loadRequests();
     const intervalId = window.setInterval(() => {
       if (document.visibilityState === "visible") loadRequests();
-    }, 5000);
+    }, 30000);
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") loadRequests();
     };
@@ -2833,20 +3286,6 @@ function PasswordResetRequestsPage({ employee, onCountChange }) {
       <PageHeading
         title="Password reset requests"
         description="Review employee requests and email a short-lived approval code to the registered address."
-        action={
-          <button
-            type="button"
-            style={buttonStyle}
-            onClick={() => {
-              setLoadingRequests(true);
-              setError("");
-              loadRequests();
-            }}
-            disabled={loadingRequests}
-          >
-            {loadingRequests ? "Refreshing…" : "Refresh requests"}
-          </button>
-        }
       />
       <Notice message={message} />
       <Notice message={error} error />
@@ -2940,6 +3379,20 @@ function LoginHistoryPage({ employee }) {
 
   useEffect(() => {
     loadHistory();
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState === "visible") loadHistory();
+    }, 30000);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") loadHistory();
+    };
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [loadHistory]);
 
   const filteredRecords = records.filter((record) => {
@@ -2974,16 +3427,6 @@ function LoginHistoryPage({ employee }) {
       <PageHeading
         title="Login History"
         description="Review successful and failed employee login attempts."
-        action={
-          <button
-            type="button"
-            style={buttonStyle}
-            onClick={loadHistory}
-            disabled={loadingHistory}
-          >
-            {loadingHistory ? "Refreshing…" : "Refresh history"}
-          </button>
-        }
       />
 
       <Notice message={error} error />
@@ -3124,7 +3567,7 @@ function StaffAssistant({ onNavigate }) {
       label: "Check low stock",
       keywords: ["low stock", "reorder", "stock alert", "out of stock"],
       page: "Dashboard",
-      text: "The dashboard lists items at or below their reorder level. Open Items to search the catalog and review each item's current quantity and reorder threshold.",
+      text: "The dashboard health center lists items at or below their reorder level. Open Items to search the catalog and review each item's current quantity and reorder threshold.",
     },
     {
       label: "Find a stock movement",
@@ -3136,7 +3579,7 @@ function StaffAssistant({ onNavigate }) {
       label: "Open reports",
       keywords: ["report", "summary", "value"],
       page: "Reports",
-      text: "Open Reports for inventory valuation, sales activity and purchase summaries. Use Refresh after recording transactions to load the latest figures.",
+      text: "Open Reports for sales, purchasing and inventory analytics. Financial Profit & Loss reports are available to administrators; staff can review current stock and reorder details.",
     },
   ];
 
@@ -3242,14 +3685,18 @@ const navigation = [
   "Reports",
 ];
 
-const SESSION_DURATION_MS = 10 * 60 * 1000;
+const IDLE_TIMEOUT_SECONDS = 3 * 60;
 
 function App() {
   const [employee, setEmployee] = useState(null);
-  const [sessionExpiresAt, setSessionExpiresAt] = useState(null);
-  const [sessionSecondsLeft, setSessionSecondsLeft] = useState(600);
+  const [sessionSecondsLeft, setSessionSecondsLeft] = useState(
+    IDLE_TIMEOUT_SECONDS
+  );
   const [sessionNotice, setSessionNotice] = useState("");
+  const [showChangePassword, setShowChangePassword] = useState(false);
   const profileMenuRef = useRef(null);
+  const idleDeadlineRef = useRef(null);
+  const dataRefreshInProgressRef = useRef(false);
   const [activePage, setActivePage] = useState("Dashboard");
   const [summary, setSummary] = useState(null);
   const [items, setItems] = useState([]);
@@ -3262,15 +3709,17 @@ function App() {
 
   const handleLogin = useCallback((authenticatedEmployee) => {
     setEmployee(authenticatedEmployee);
-    setSessionExpiresAt(Date.now() + SESSION_DURATION_MS);
-    setSessionSecondsLeft(SESSION_DURATION_MS / 1000);
+    idleDeadlineRef.current = Date.now() + IDLE_TIMEOUT_SECONDS * 1000;
+    setSessionSecondsLeft(IDLE_TIMEOUT_SECONDS);
+    setShowChangePassword(false);
     setSessionNotice("");
   }, []);
 
   const handleLogout = useCallback((notice = "") => {
     setEmployee(null);
-    setSessionExpiresAt(null);
-    setSessionSecondsLeft(SESSION_DURATION_MS / 1000);
+    idleDeadlineRef.current = null;
+    setSessionSecondsLeft(IDLE_TIMEOUT_SECONDS);
+    setShowChangePassword(false);
     setSessionNotice(notice);
     setActivePage("Dashboard");
     setSummary(null);
@@ -3304,29 +3753,49 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (!employee || !sessionExpiresAt) return undefined;
+    if (!employee) return undefined;
 
-    function updateSessionCountdown() {
+    function resetIdleDeadline() {
+      idleDeadlineRef.current = Date.now() + IDLE_TIMEOUT_SECONDS * 1000;
+    }
+
+    function checkIdleDeadline() {
+      if (!idleDeadlineRef.current) resetIdleDeadline();
       const secondsLeft = Math.max(
         0,
-        Math.ceil((sessionExpiresAt - Date.now()) / 1000)
+        Math.ceil((idleDeadlineRef.current - Date.now()) / 1000)
       );
       setSessionSecondsLeft(secondsLeft);
       if (secondsLeft === 0) {
-        handleLogout("Your session expired after 10 minutes. Please sign in again.");
+        handleLogout("You were signed out after three minutes of inactivity.");
       }
     }
 
-    const intervalId = window.setInterval(updateSessionCountdown, 1000);
-    window.addEventListener("focus", updateSessionCountdown);
-    document.addEventListener("visibilitychange", updateSessionCountdown);
+    const activityEvents = [
+      "pointerdown",
+      "pointermove",
+      "keydown",
+      "touchstart",
+      "wheel",
+      "scroll",
+    ];
+    activityEvents.forEach((eventName) =>
+      window.addEventListener(eventName, resetIdleDeadline, { passive: true })
+    );
+    const intervalId = window.setInterval(checkIdleDeadline, 1000);
+    window.addEventListener("focus", checkIdleDeadline);
+    document.addEventListener("visibilitychange", checkIdleDeadline);
+    checkIdleDeadline();
 
     return () => {
       window.clearInterval(intervalId);
-      window.removeEventListener("focus", updateSessionCountdown);
-      document.removeEventListener("visibilitychange", updateSessionCountdown);
+      activityEvents.forEach((eventName) =>
+        window.removeEventListener(eventName, resetIdleDeadline)
+      );
+      window.removeEventListener("focus", checkIdleDeadline);
+      document.removeEventListener("visibilitychange", checkIdleDeadline);
     };
-  }, [employee, handleLogout, sessionExpiresAt]);
+  }, [employee, handleLogout]);
 
   const loadDashboard = useCallback(async () => {
     const data = await apiRequest("/api/dashboard/", employee);
@@ -3353,11 +3822,14 @@ function App() {
     setMovements(Array.isArray(data) ? data : data.results || []);
   }, [employee]);
 
-  const refreshAll = useCallback(async () => {
-    if (!employee) return;
+  const refreshAll = useCallback(async (silent = false) => {
+    if (!employee || dataRefreshInProgressRef.current) return;
 
-    setLoading(true);
-    setGlobalError("");
+    dataRefreshInProgressRef.current = true;
+    if (!silent) {
+      setLoading(true);
+      setGlobalError("");
+    }
 
     try {
       await Promise.all([
@@ -3370,7 +3842,8 @@ function App() {
     } catch (err) {
       setGlobalError(err.message || "Unable to load inventory data.");
     } finally {
-      setLoading(false);
+      dataRefreshInProgressRef.current = false;
+      if (!silent) setLoading(false);
     }
   }, [
     employee,
@@ -3385,9 +3858,33 @@ function App() {
     if (employee) refreshAll();
   }, [employee, refreshAll]);
 
+  useEffect(() => {
+    if (!employee) return undefined;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") refreshAll(true);
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 30000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
+  }, [employee, refreshAll]);
+
   const updatePendingResetCount = useCallback((count) => {
     setPendingResetCount(count);
   }, []);
+
+  const submitPasswordChange = useCallback(
+    (payload) =>
+      apiRequest("/api/auth/change-password/", employee, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      }),
+    [employee]
+  );
 
   useEffect(() => {
     if (employee?.role !== "ADMIN") return;
@@ -3434,27 +3931,21 @@ function App() {
     return <LoginPage onLogin={handleLogin} sessionNotice={sessionNotice} />;
   }
 
-  const refreshPage = async () => {
-    await refreshAll();
-  };
-
   const visibleNavigation =
     employee.role === "ADMIN"
       ? [
           ...navigation,
           "Password Reset Requests",
           "Staff Management",
-          "Inventory Reset",
           "Login History",
         ]
       : navigation;
   const displayName =
     employee.full_name || employee.employee_id || employee.username || "Employee";
-  const displayRole = employee.role === "ADMIN" ? "Administrator" : "Staff";
 
   return (
     <div style={styles.app}>
-      <aside style={styles.sidebar}>
+      <aside className="app-sidebar" style={styles.sidebar}>
         <div style={styles.brand}>
           <div style={styles.logo}>SP</div>
           <div>
@@ -3490,9 +3981,6 @@ function App() {
               }}
             >
               {page}
-              {page === "Items" && (
-                <span style={styles.navCount}>{items.length}</span>
-              )}
               {page === "Password Reset Requests" &&
                 pendingResetCount > 0 && (
                   <span className="password-reset-nav-count">
@@ -3513,7 +4001,7 @@ function App() {
         </div>
       </aside>
 
-      <main style={styles.main}>
+      <main className="app-main" style={styles.main}>
         <header style={styles.topbar}>
           <div>
             <strong>StockPilot ERP</strong>
@@ -3525,7 +4013,7 @@ function App() {
           <div
             className="session-countdown"
             role="timer"
-            aria-label={`Automatic sign-out in ${Math.floor(sessionSecondsLeft / 60)} minutes and ${sessionSecondsLeft % 60} seconds`}
+            aria-label={`Automatic sign-out after inactivity in ${sessionSecondsLeft} seconds`}
           >
             <Clock3 size={16} aria-hidden="true" />
             <span>Auto sign-out in</span>
@@ -3536,73 +4024,38 @@ function App() {
           </div>
 
           <details className="profile-menu" ref={profileMenuRef}>
-            <summary aria-label="Open profile and account actions" title="Profile">
+            <summary aria-label={`Profile for ${displayName}`} title="Profile">
               <CircleUserRound size={21} aria-hidden="true" />
               <span>{displayName}</span>
             </summary>
             <div className="profile-popover">
               <div className="profile-popover-heading">
-                <div className="profile-avatar" aria-hidden="true">
-                  {displayName.slice(0, 1).toUpperCase()}
-                </div>
                 <div className="profile-identity">
                   <strong>{displayName}</strong>
-                  <span>{displayRole}</span>
                 </div>
               </div>
-
-              <div className="profile-details">
-                <div className="profile-detail">
-                  <BadgeCheck size={16} aria-hidden="true" />
-                  <span>Employee ID</span>
-                  <strong>{employee.employee_id || "—"}</strong>
-                </div>
-                {employee.email && (
-                  <div className="profile-detail">
-                    <Mail size={16} aria-hidden="true" />
-                    <span>Email</span>
-                    <strong>{employee.email}</strong>
-                  </div>
-                )}
-                {employee.mobile_number && (
-                  <div className="profile-detail">
-                    <Phone size={16} aria-hidden="true" />
-                    <span>Mobile</span>
-                    <strong>{employee.mobile_number}</strong>
-                  </div>
-                )}
-                {employee.department && (
-                  <div className="profile-detail">
-                    <Building2 size={16} aria-hidden="true" />
-                    <span>Department</span>
-                    <strong>{employee.department}</strong>
-                  </div>
-                )}
-                {employee.job_title && (
-                  <div className="profile-detail">
-                    <BriefcaseBusiness size={16} aria-hidden="true" />
-                    <span>Job title</span>
-                    <strong>{employee.job_title}</strong>
-                  </div>
-                )}
-                {employee.start_date && (
-                  <div className="profile-detail profile-detail-date">
-                    <span>Start date</span>
-                    <strong>{employee.start_date}</strong>
-                  </div>
-                )}
-              </div>
-
               <button
                 type="button"
-                className="profile-signout"
-                onClick={() => handleLogout()}
+                className="profile-action"
+                onClick={() => {
+                  profileMenuRef.current.open = false;
+                  setShowChangePassword(true);
+                }}
               >
-                <LogOut size={17} aria-hidden="true" />
-                Sign out
+                <KeyRound size={17} aria-hidden="true" />
+                Change password
               </button>
             </div>
           </details>
+          <button
+            type="button"
+            className="topbar-logout"
+            aria-label="Sign out"
+            title="Sign out"
+            onClick={() => handleLogout()}
+          >
+            <LogOut size={18} aria-hidden="true" />
+          </button>
         </header>
 
         {employee.role === "ADMIN" && pendingResetCount > 0 && (
@@ -3652,7 +4105,6 @@ function App() {
               purchases={purchases}
               sales={sales}
               onNavigate={setActivePage}
-              refresh={refreshPage}
             />
           )}
 
@@ -3688,18 +4140,15 @@ function App() {
             <MovementsPage
               movements={movements}
               items={items}
-              reload={loadMovements}
             />
           )}
 
           {activePage === "Reports" && (
             <ReportsPage
+              employee={employee}
               items={items}
               purchases={purchases}
               sales={sales}
-              movements={movements}
-              summary={summary}
-              refresh={refreshPage}
             />
           )}
 
@@ -3719,11 +4168,16 @@ function App() {
             <StaffManagementPage employee={employee} />
           )}
 
-          {activePage === "Inventory Reset" && employee.role === "ADMIN" && (
-            <InventoryResetPage employee={employee} refresh={refreshAll} />
-          )}
         </div>
       </main>
+
+      {showChangePassword && (
+        <ChangePasswordDialog
+          employee={employee}
+          onClose={() => setShowChangePassword(false)}
+          onSubmit={submitPasswordChange}
+        />
+      )}
 
       {employee.role === "STAFF" && (
         <StaffAssistant onNavigate={setActivePage} />
@@ -3786,12 +4240,6 @@ const styles = {
     border: "none",
     cursor: "pointer",
     fontSize: 13,
-  },
-  navCount: {
-    background: "#2a3b50",
-    borderRadius: 20,
-    padding: "2px 7px",
-    fontSize: 11,
   },
   sidebarFooter: {
     marginTop: "auto",

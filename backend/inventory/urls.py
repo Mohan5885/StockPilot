@@ -11,6 +11,7 @@ from .views import (
     inventory_reset,
     inventory_reset_cancel,
     inventory_reset_challenge,
+    reports_data,
 )
 
 router = DefaultRouter()
@@ -25,6 +26,7 @@ router.register(
 
 urlpatterns = [
     path("dashboard/", dashboard_summary, name="dashboard-summary"),
+    path("reports/", reports_data, name="reports-data"),
     path(
         "admin/reset-challenge/",
         inventory_reset_challenge,

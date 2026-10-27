@@ -11,6 +11,7 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.mail import send_mail
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from rest_framework import status
@@ -27,6 +28,7 @@ from rest_framework.response import Response
 
 from .models import EmployeeProfile, LoginHistory, PasswordResetRequest
 from .serializers import (
+    ChangePasswordSerializer,
     LoginSerializer,
     PasswordResetConfirmSerializer,
     PasswordResetRequestSerializer,
@@ -92,12 +94,15 @@ def login_view(request):
     password = serializer.validated_data["password"]
     requested_role = serializer.validated_data.get("portal")
 
-    try:
-        profile = EmployeeProfile.objects.select_related(
-            "user"
-        ).get(employee_id__exact=employee_id)
-
-    except EmployeeProfile.DoesNotExist:
+    matching_profiles = list(
+        EmployeeProfile.objects.select_related("user")
+        .filter(
+            Q(employee_id__iexact=employee_id)
+            | Q(user__username__iexact=employee_id)
+        )
+        .order_by("pk")[:2]
+    )
+    if len(matching_profiles) != 1:
         record_login_attempt(
             request,
             employee_id=employee_id[:30],
@@ -110,6 +115,7 @@ def login_view(request):
             },
             status=status.HTTP_401_UNAUTHORIZED,
         )
+    profile = matching_profiles[0]
 
     if requested_role and requested_role != profile.role:
         record_login_attempt(
@@ -217,14 +223,16 @@ def password_reset_request_view(request):
     serializer = PasswordResetRequestSerializer(data=request.data)
     serializer.is_valid(raise_exception=True)
     employee_id = serializer.validated_data["employee_id"]
-    role = serializer.validated_data["portal"]
+    role = serializer.validated_data.get("portal")
 
     try:
-        profile = EmployeeProfile.objects.select_related("user").get(
+        profile_query = EmployeeProfile.objects.select_related("user").filter(
             employee_id__iexact=employee_id,
-            role=role,
             user__is_active=True,
         )
+        if role:
+            profile_query = profile_query.filter(role=role)
+        profile = profile_query.get()
     except EmployeeProfile.DoesNotExist:
         return password_reset_generic_response()
 
@@ -472,11 +480,13 @@ def password_reset_confirm_view(request):
         "detail": "The approval code is invalid or expired."
     }
 
-    profile = EmployeeProfile.objects.select_related("user").filter(
+    profile_query = EmployeeProfile.objects.select_related("user").filter(
         employee_id__iexact=data["employee_id"],
-        role=data["portal"],
         user__is_active=True,
-    ).first()
+    )
+    if data.get("portal"):
+        profile_query = profile_query.filter(role=data["portal"])
+    profile = profile_query.first()
     if profile is None:
         return Response(generic_error, status=status.HTTP_400_BAD_REQUEST)
 
@@ -541,6 +551,35 @@ def password_reset_confirm_view(request):
 
     return Response(
         {"detail": "Password updated. You can now sign in with your new password."},
+        status=status.HTTP_200_OK,
+    )
+
+
+@api_view(["POST"])
+@authentication_classes([TokenAuthentication])
+@permission_classes([IsAuthenticated])
+def change_password_view(request):
+    serializer = ChangePasswordSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    data = serializer.validated_data
+
+    if not request.user.check_password(data["current_password"]):
+        return Response(
+            {"current_password": ["Current password is incorrect."]},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    try:
+        validate_password(data["new_password"], user=request.user)
+    except ValidationError as error:
+        return Response(
+            {"new_password": list(error.messages)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    request.user.set_password(data["new_password"])
+    request.user.save(update_fields=["password"])
+    return Response(
+        {"detail": "Password changed successfully."},
         status=status.HTTP_200_OK,
     )
 

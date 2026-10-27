@@ -22,7 +22,10 @@ class LoginSerializer(serializers.Serializer):
 
 class PasswordResetRequestSerializer(serializers.Serializer):
     employee_id = serializers.CharField(max_length=30)
-    portal = serializers.ChoiceField(choices=["ADMIN", "STAFF"])
+    portal = serializers.ChoiceField(
+        choices=["ADMIN", "STAFF"],
+        required=False,
+    )
 
     def validate_employee_id(self, value):
         return value.strip()
@@ -30,7 +33,10 @@ class PasswordResetRequestSerializer(serializers.Serializer):
 
 class PasswordResetConfirmSerializer(serializers.Serializer):
     employee_id = serializers.CharField(max_length=30)
-    portal = serializers.ChoiceField(choices=["ADMIN", "STAFF"])
+    portal = serializers.ChoiceField(
+        choices=["ADMIN", "STAFF"],
+        required=False,
+    )
     approval_code = serializers.RegexField(r"^\d{8}$")
     new_password = serializers.CharField(
         write_only=True,
@@ -42,11 +48,39 @@ class PasswordResetConfirmSerializer(serializers.Serializer):
         return value.strip()
 
 
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+        style={"input_type": "password"},
+    )
+    new_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+        style={"input_type": "password"},
+    )
+    confirm_password = serializers.CharField(
+        write_only=True,
+        trim_whitespace=False,
+        style={"input_type": "password"},
+    )
+
+    def validate(self, attrs):
+        if attrs["new_password"] != attrs["confirm_password"]:
+            raise serializers.ValidationError(
+                {"confirm_password": "Password confirmation does not match."}
+            )
+        return attrs
+
+
 class StaffCreateSerializer(serializers.Serializer):
     employee_id = serializers.CharField(max_length=30)
     full_name = serializers.CharField(max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
-    mobile_number = serializers.CharField(max_length=20)
+    mobile_number = serializers.RegexField(
+        regex=r"^\d{10}$",
+        error_messages={"invalid": "Enter a 10-digit mobile number."},
+    )
     department = serializers.CharField(max_length=100, required=False, allow_blank=True)
     job_title = serializers.CharField(max_length=100, required=False, allow_blank=True)
     start_date = serializers.DateField(required=False, allow_null=True)
@@ -74,6 +108,11 @@ class StaffCreateSerializer(serializers.Serializer):
 
 
 class StaffProfileSerializer(serializers.ModelSerializer):
+    mobile_number = serializers.RegexField(
+        regex=r"^\d{10}$",
+        error_messages={"invalid": "Enter a 10-digit mobile number."},
+        required=True,
+    )
     email = serializers.EmailField(
         source="user.email",
         required=False,

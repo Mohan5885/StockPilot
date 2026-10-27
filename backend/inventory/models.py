@@ -7,8 +7,30 @@ from django.db import models
 class Item(models.Model):
     sku = models.CharField(max_length=50, unique=True)
     name = models.CharField(max_length=150)
+    brand = models.CharField(max_length=100, blank=True)
+    model = models.CharField(max_length=100, blank=True)
+    category = models.CharField(max_length=100, blank=True)
+    warranty = models.CharField(max_length=100, blank=True)
     description = models.TextField(blank=True)
     unit_price = models.DecimalField(max_digits=10, decimal_places=2)
+    inventory_unit_cost = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    inventory_cost_initialized_at = models.DateTimeField(
+        null=True,
+        blank=True,
+    )
+    inventory_cost_initialized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="inventory_cost_initializations",
+    )
     quantity = models.PositiveIntegerField(default=0)
     reorder_level = models.PositiveIntegerField(default=5)
     is_active = models.BooleanField(default=True)
@@ -36,7 +58,7 @@ class Purchase(models.Model):
         validators=[MinValueValidator(0.01)],
     )
     notes = models.TextField(blank=True)
-    received_at = models.DateTimeField(auto_now_add=True)
+    received_at = models.DateTimeField(auto_now_add=True, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -59,11 +81,13 @@ class Purchase(models.Model):
 class StockMovement(models.Model):
     PURCHASE = "PURCHASE"
     SALE = "SALE"
+    ISSUE = "ISSUE"
     ADJUSTMENT = "ADJUSTMENT"
 
     MOVEMENT_CHOICES = [
         (PURCHASE, "Purchase / Inbound"),
-        (SALE, "Sale / Issue"),
+        (SALE, "Sale"),
+        (ISSUE, "Stock Issue"),
         (ADJUSTMENT, "Stock Adjustment"),
     ]
 
@@ -81,9 +105,25 @@ class StockMovement(models.Model):
     )
     quantity_before = models.PositiveIntegerField()
     quantity_after = models.PositiveIntegerField()
+    unit_selling_price = models.DecimalField(
+        max_digits=12,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    unit_cost = models.DecimalField(
+        max_digits=14,
+        decimal_places=4,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(0)],
+    )
+    customer_name = models.CharField(max_length=150, blank=True)
+    customer_phone = models.CharField(max_length=30, blank=True)
     reference = models.CharField(max_length=50, db_index=True)
     notes = models.TextField(blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

@@ -60,6 +60,108 @@ class StaffAccountAPITests(APITestCase):
 		self.assertEqual(response.status_code, 403)
 		self.assertEqual(LoginHistory.objects.latest("id").status, "FAILED")
 
+	def test_login_uses_one_flow_for_admin_and_staff_without_portal(self):
+		staff_response = self.client.post(
+			reverse("login"),
+			{
+				"employee_id": "STAFF-001",
+				"password": "Staff-Password-2026!",
+			},
+			format="json",
+		)
+		admin_response = self.client.post(
+			reverse("login"),
+			{
+				"employee_id": "ADMIN-001",
+				"password": "Admin-Password-2026!",
+			},
+			format="json",
+		)
+
+		self.assertEqual(staff_response.status_code, 200)
+		self.assertEqual(staff_response.data["employee"]["role"], "STAFF")
+		self.assertEqual(admin_response.status_code, 200)
+		self.assertEqual(admin_response.data["employee"]["role"], "ADMIN")
+
+	def test_login_accepts_employee_id_without_case_sensitivity(self):
+		response = self.client.post(
+			reverse("login"),
+			{
+				"employee_id": "staff-001",
+				"password": "Staff-Password-2026!",
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 200, response.data)
+		self.assertEqual(response.data["employee"]["employee_id"], "STAFF-001")
+
+	def test_login_accepts_legacy_username_when_it_differs_from_employee_id(self):
+		self.staff_user.username = "legacy-staff-login"
+		self.staff_user.save(update_fields=["username"])
+
+		response = self.client.post(
+			reverse("login"),
+			{
+				"employee_id": "LEGACY-STAFF-LOGIN",
+				"password": "Staff-Password-2026!",
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 200, response.data)
+		self.assertEqual(response.data["employee"]["employee_id"], "STAFF-001")
+
+	def test_login_rejects_ambiguous_employee_id_or_username(self):
+		other_user = User.objects.create_user(
+			username="STAFF-001",
+			password="Other-Password-2026!",
+		)
+		EmployeeProfile.objects.create(
+			user=other_user,
+			employee_id="OTHER-001",
+			mobile_number="9000000003",
+			role="STAFF",
+		)
+
+		response = self.client.post(
+			reverse("login"),
+			{
+				"employee_id": "STAFF-001",
+				"password": "Staff-Password-2026!",
+			},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 401)
+		self.assertEqual(response.data["message"], "Invalid employee ID or password.")
+
+	def test_authenticated_user_can_change_password(self):
+		wrong_current = self.staff_client.post(
+			reverse("change-password"),
+			{
+				"current_password": "wrong-password",
+				"new_password": "New-Unique-Password-2026!",
+				"confirm_password": "New-Unique-Password-2026!",
+			},
+			format="json",
+		)
+		changed = self.staff_client.post(
+			reverse("change-password"),
+			{
+				"current_password": "Staff-Password-2026!",
+				"new_password": "New-Unique-Password-2026!",
+				"confirm_password": "New-Unique-Password-2026!",
+			},
+			format="json",
+		)
+
+		self.staff_user.refresh_from_db()
+		self.assertEqual(wrong_current.status_code, 400)
+		self.assertEqual(changed.status_code, 200)
+		self.assertTrue(self.staff_user.check_password("New-Unique-Password-2026!"))
+		self.assertTrue(Token.objects.filter(user=self.staff_user).exists())
+
 	def test_staff_cannot_list_staff_accounts(self):
 		response = self.staff_client.get(reverse("staff-list-create"))
 
@@ -89,6 +191,37 @@ class StaffAccountAPITests(APITestCase):
 		self.assertEqual(profile.full_name, "New Associate")
 		self.assertEqual(profile.department, "Receiving")
 		self.assertNotIn("password", response.data)
+
+	def test_staff_creation_requires_exactly_ten_mobile_digits(self):
+		for index, mobile_number in enumerate(
+			("900000000", "90000000000", "90000000ab")
+		):
+			with self.subTest(mobile_number=mobile_number):
+				response = self.admin_client.post(
+					reverse("staff-list-create"),
+					{
+						"employee_id": f"STAFF-INVALID-{index}",
+						"full_name": "Invalid Mobile Associate",
+						"mobile_number": mobile_number,
+						"password": "Unique-Staff-Password-2026!",
+					},
+					format="json",
+				)
+
+				self.assertEqual(response.status_code, 400)
+				self.assertIn("mobile_number", response.data)
+
+	def test_staff_mobile_update_requires_exactly_ten_digits(self):
+		response = self.admin_client.patch(
+			reverse("staff-detail", args=[self.staff_profile.id]),
+			{"mobile_number": "123456789"},
+			format="json",
+		)
+
+		self.assertEqual(response.status_code, 400)
+		self.assertIn("mobile_number", response.data)
+		self.staff_profile.refresh_from_db()
+		self.assertEqual(self.staff_profile.mobile_number, "9000000002")
 
 	def test_admin_deactivation_disables_login_and_revokes_token(self):
 		response = self.admin_client.patch(
@@ -152,6 +285,21 @@ class PasswordResetAPITests(APITestCase):
         self.staff_client = APIClient()
         self.staff_client.credentials(
             HTTP_AUTHORIZATION=f"Token {staff_token.key}"
+        )
+
+    def test_password_reset_request_can_identify_employee_without_role_picker(self):
+        response = self.client.post(
+            reverse("password-reset-request"),
+            {"employee_id": "STAFF-RESET"},
+            format="json",
+        )
+
+        self.assertEqual(response.status_code, 202)
+        self.assertTrue(
+            PasswordResetRequest.objects.filter(
+                employee_profile=self.staff_profile,
+                status="PENDING",
+            ).exists()
         )
 
     def test_reset_request_response_does_not_disclose_account_existence(self):
